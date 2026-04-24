@@ -193,8 +193,10 @@
         if (response.status === 200) {
           try {
             const result = JSON.parse(response.responseText);
-            const count = findNumberValue(result);
-            const msg = count !== null ? `成功${count}题` : '已上传';
+            // 响应格式: {"code":0,"data":{"message":"已添加50条"}}
+            const match = (result?.data?.message || '').match(/\d+/);
+            const count = match ? match[0] : '';
+            const msg = count ? `成功${count}题` : '已上传';
             console.log(`[${SCRIPT_NAME}] 上传成功: ${msg}`);
             btn.textContent = msg;
             btn.style.color = '#52c41a';
