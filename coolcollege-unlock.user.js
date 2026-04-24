@@ -158,11 +158,77 @@
     // 暂存到 Map (D-07)
     rowDataMap.set(row, { record, eid, examId });
 
+    // Phase 4: 解锁按钮 (BTN-01~05)
+    unlockDetailButton(row, { record, eid, examId });
+
     console.log(
       `[${SCRIPT_NAME}] 提取成功: submit_id=${record.submit_id}, ` +
       `show_record=${record.show_record}, eid=${eid}, examId=${examId}`
     );
   }
+
+  // ===== Phase 4: 按钮解锁 =====
+
+  /**
+   * 解锁「作答详情」按钮：修改样式 + 绑定点击跳转 (BTN-01~05, D-03~06)
+   * @param {HTMLElement} row - 表格行元素
+   * @param {{ record: Object, eid: string|null, examId: string|null }} data - 暂存数据
+   */
+  function unlockDetailButton(row, data) {
+    const { record, eid, examId } = data;
+
+    // BTN-01: 仅处理 show_record === "false" 的行 (D-03)
+    if (record.show_record !== "false") return;
+
+    // D-01, D-02: 定位「作答详情」span — 通过文本内容而非类名
+    const fixRightCell = row.querySelector('.ant-table-cell-fix-right');
+    if (!fixRightCell) {
+      console.warn(`[${SCRIPT_NAME}] 未找到 .ant-table-cell-fix-right 单元格，可能页面结构已变化`);
+      return;
+    }
+
+    // 查找包含"作答详情"文本的 span
+    const spans = fixRightCell.querySelectorAll('span');
+    let detailSpan = null;
+    for (const span of spans) {
+      if (span.textContent.trim() === '作答详情') {
+        detailSpan = span;
+        break;
+      }
+    }
+
+    if (!detailSpan) {
+      console.warn(`[${SCRIPT_NAME}] 未找到「作答详情」span，可能页面结构已变化`);
+      return;
+    }
+
+    // BTN-02: 修改样式为蓝色可点击 (D-03, D-04)
+    detailSpan.style.color = 'rgb(0, 122, 255)';
+    detailSpan.style.cursor = 'pointer';
+
+    // BTN-03, BTN-04: 绑定点击事件，GM_openInTab 打开新标签页 (D-05)
+    detailSpan.addEventListener('click', function (e) {
+      e.stopPropagation();
+
+      // BTN-05: 构造跳转 URL (D-06)
+      const params = new URLSearchParams();
+      if (examId) params.set('exam_id', examId);
+      if (record.submit_id) params.set('submit_id', record.submit_id);
+      if (record.task_id) params.set('task_id', record.task_id);
+      if (eid) params.set('eid', eid);
+
+      const url = `https://pro.coolcollege.cn/training/examination/exam-detail?${params.toString()}`;
+
+      console.log(`[${SCRIPT_NAME}] 打开作答详情: ${url}`);
+      GM_openInTab(url, { active: true });
+    });
+
+    console.log(
+      `[${SCRIPT_NAME}] 已解锁按钮: submit_id=${record.submit_id}`
+    );
+  }
+
+  // ===== Phase 4: 按钮解锁结束 =====
 
   /**
    * 处理新增的表格行（使用 data-processed 过滤重复处理）
