@@ -53,7 +53,8 @@
         if (node.tagName === 'TR') {
           rows.push(node);
         } else {
-          node.querySelectorAll?.('tr[data-row-key]').forEach(r => rows.push(r));
+          // 酷学院数据行使用 .ant-table-row 类名，无 data-row-key 属性
+          node.querySelectorAll?.('.ant-table-row').forEach(r => rows.push(r));
         }
       }
     }
@@ -117,13 +118,37 @@
     console.log(`[${SCRIPT_NAME}] Observer 启动，观察 ${target.className || 'body'}`);
 
     // Pitfall 1 缓解：主动处理已存在的行（避免表格在 init() 之前已加载）
-    const existingRows = target.querySelectorAll('tr[data-row-key]:not([data-processed])');
+    const existingRows = target.querySelectorAll('.ant-table-row:not([data-processed])');
     for (const row of existingRows) {
       processRow(row);
       row.setAttribute('data-processed', 'true');
     }
     if (existingRows.length > 0) {
       console.log(`[${SCRIPT_NAME}] 主动处理了 ${existingRows.length} 行`);
+    }
+
+    // 时机修复：如果回退到了 body，延迟重试定位精确目标
+    if (target === document.body) {
+      setTimeout(() => {
+        const preciseTarget =
+          document.querySelector('.ant-table-tbody') ||
+          document.querySelector('.ant-table');
+        if (preciseTarget && currentObserver) {
+          currentObserver.disconnect();
+          currentObserver.observe(preciseTarget, { childList: true, subtree: true });
+          console.log(`[${SCRIPT_NAME}] Observer 升级，观察 ${preciseTarget.className}`);
+
+          // 重新处理精确目标下已存在的行
+          const lateRows = preciseTarget.querySelectorAll('.ant-table-row:not([data-processed])');
+          for (const row of lateRows) {
+            processRow(row);
+            row.setAttribute('data-processed', 'true');
+          }
+          if (lateRows.length > 0) {
+            console.log(`[${SCRIPT_NAME}] 延迟处理了 ${lateRows.length} 行`);
+          }
+        }
+      }, 1000);
     }
   }
 
