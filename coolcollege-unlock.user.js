@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         CoolCollege 作答详情解锁
 // @namespace    https://github.com/coolcollege-unlock
-// @version      0.1.0
+// @version      0.1.1
 // @description  解锁酷学院考试数据页面的作答详情按钮，支持查看历史考试作答详情
 // @author       zhaolulu
-// @match        *://pro.coolcollege.cn/*training/examination/exam-data*
+// @match        *://pro.coolcollege.cn/*
 // @grant        window.onurlchange
 // @grant        GM_openInTab
 // @run-at       document-idle
@@ -31,7 +31,7 @@
   // 页面初次加载时执行
   init();
 
-  // SPA 路由切换检测（per D-03: 纯 window.onurlchange，无降级方案）
+  // SPA 路由切换检测
   if (typeof window.onurlchange === 'object' && window.onurlchange === null) {
     window.addEventListener('urlchange', (event) => {
       console.log(`[${SCRIPT_NAME}] 检测到路由变化: ${event.url}`);

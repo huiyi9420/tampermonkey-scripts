@@ -16,7 +16,7 @@
 ## Implementation Decisions
 
 ### URL 匹配策略
-- **D-01:** @match 精确匹配考试数据页面 URL（`*/training/examination/exam-data*`），缩小脚本激活范围，减少非目标页面的不必要执行
+- **D-01:** ~~精确匹配~~ → **修正为宽匹配 + 路由过滤**（`*://pro.coolcollege.cn/*`），原因：`@match` 不匹配 URL hash fragment，目标页面使用 hash 路由 `#/training/examination/exam-data`，精确匹配永远不命中。由 `isTargetPage()` 做 `href.includes()` 过滤
 
 ### 日志风格
 - **D-02:** 简洁模式 — 仅输出关键节点日志（脚本初始化、路由变化检测、目标页面激活），不输出冗余调试信息
