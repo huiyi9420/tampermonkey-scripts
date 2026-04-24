@@ -9,10 +9,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Script Metadata & Initialization
 
-- [ ] **INIT-01**: 脚本包含正确的 Tampermonkey metadata（@name, @match, @grant 等）
-- [ ] **INIT-02**: 脚本仅在 `pro.coolcollege.cn` 的考试数据页面激活
-- [ ] **INIT-03**: 脚本通过 `window.onurlchange` 检测 SPA 路由切换，支持页面间导航
-- [ ] **INIT-04**: 脚本在页面初次加载和路由切换时均能正确初始化
+- [x] **INIT-01**: 脚本包含正确的 Tampermonkey metadata（@name, @match, @grant 等）
+- [x] **INIT-02**: 脚本仅在 `pro.coolcollege.cn` 的考试数据页面激活
+- [x] **INIT-03**: 脚本通过 `window.onurlchange` 检测 SPA 路由切换，支持页面间导航
+- [x] **INIT-04**: 脚本在页面初次加载和路由切换时均能正确初始化
 
 ### DOM Observation
 
@@ -68,10 +68,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INIT-01 | Phase 1 | Pending |
-| INIT-02 | Phase 1 | Pending |
-| INIT-03 | Phase 1 | Pending |
-| INIT-04 | Phase 1 | Pending |
+| INIT-01 | Phase 1 | Complete |
+| INIT-02 | Phase 1 | Complete |
+| INIT-03 | Phase 1 | Complete |
+| INIT-04 | Phase 1 | Complete |
 | DOM-01 | Phase 2 | Pending |
 | DOM-02 | Phase 2 | Pending |
 | DOM-03 | Phase 2 | Pending |

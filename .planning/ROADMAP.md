@@ -12,7 +12,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: 脚本脚手架与路由感知** - 建立 Tampermonkey metadata、URL 匹配和 SPA 路由检测
+- [x] **Phase 1: 脚本脚手架与路由感知** - 建立 Tampermonkey metadata、URL 匹配和 SPA 路由检测 (completed 2026-04-24)
 - [ ] **Phase 2: DOM 变化监听** - MutationObserver 监听表格区域，去抖处理，避免重复操作
 - [ ] **Phase 3: React Fiber 数据提取** - 从 React Fiber 获取 record 数据，提取 submit_id 等关键字段
 - [ ] **Phase 4: 按钮启用与健壮性** - 修改按钮样式、绑定点击跳转、完善错误处理
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 1 plan
 
 Plans:
-- [ ] 01-01-PLAN.md — 创建 Tampermonkey metadata、URL 匹配、SPA 路由检测和初始化逻辑
+- [x] 01-01-PLAN.md — 创建 Tampermonkey metadata、URL 匹配、SPA 路由检测和初始化逻辑
 
 ### Phase 2: DOM 变化监听
 **Goal**: 脚本能可靠检测表格数据的动态加载，为后续按钮处理提供触发机制
@@ -74,7 +74,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 脚本脚手架与路由感知 | 0/1 | Not started | - |
+| 1. 脚本脚手架与路由感知 | 1/1 | Complete   | 2026-04-24 |
 | 2. DOM 变化监听 | 0/? | Not started | - |
 | 3. React Fiber 数据提取 | 0/? | Not started | - |
 | 4. 按钮启用与健壮性 | 0/? | Not started | - |
