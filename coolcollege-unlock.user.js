@@ -21,11 +21,41 @@
   }
 
   function init() {
+    // D-05: 清理旧 Observer
+    if (currentObserver) {
+      currentObserver.disconnect();
+      currentObserver = null;
+    }
     if (!isTargetPage()) {
       return;
     }
     console.log(`[${SCRIPT_NAME}] 目标页面已激活，开始初始化`);
-    // Phase 2-4 的实际处理逻辑将在此处添加
+
+    // D-01: 精确 + 回退策略查找观察目标
+    const target =
+      document.querySelector('.ant-table-tbody') ||
+      document.querySelector('.ant-table') ||
+      document.body;
+
+    // D-02: 创建 MutationObserver
+    const observer = new MutationObserver((mutations) => {
+      debouncedProcessRows(mutations);
+    });
+    currentObserver = observer;
+
+    // 开始观察
+    observer.observe(target, { childList: true, subtree: true });
+    console.log(`[${SCRIPT_NAME}] Observer 启动，观察 ${target.className || 'body'}`);
+
+    // Pitfall 1 缓解：主动处理已存在的行（避免表格在 init() 之前已加载）
+    const existingRows = target.querySelectorAll('tr[data-row-key]:not([data-processed])');
+    for (const row of existingRows) {
+      processRow(row);
+      row.setAttribute('data-processed', 'true');
+    }
+    if (existingRows.length > 0) {
+      console.log(`[${SCRIPT_NAME}] 主动处理了 ${existingRows.length} 行`);
+    }
   }
 
   // ===== Phase 2: DOM 变化监听辅助函数 =====
