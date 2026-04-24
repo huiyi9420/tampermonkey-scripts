@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         CoolCollege 作答详情解锁
 // @namespace    https://github.com/coolcollege-unlock
-// @version      0.2.0
-// @description  解锁酷学院考试数据页面的作答详情按钮，支持查看历史考试作答详情
+// @version      0.3.0
+// @description  解锁酷学院考试数据页面的作答详情按钮，支持查看历史考试作答详情及下载试题
 // @author       zhaolulu
 // @match        *://pro.coolcollege.cn/*
 // @grant        window.onurlchange
 // @grant        GM_openInTab
+// @grant        GM_xmlhttpRequest
+// @connect      coolapi.coolcollege.cn
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -36,25 +38,14 @@
    */
   const rowDataMap = new Map();
 
-  // ===== Phase 3: React Fiber 数据提取 =====
+  // ===== 数据获取 =====
 
-  /**
-   * Fiber key 前缀列表，按优先级排序
-   * React 17: __reactInternalInstance$ (已验证酷学院使用)
-   * React 18: __reactFiber$
-   * 旧版本: _reactInternals
-   */
   const FIBER_KEY_PREFIXES = [
     '__reactInternalInstance$',
     '__reactFiber$',
     '_reactInternals'
   ];
 
-  /**
-   * 从表格行元素中通过 React Fiber 提取 record 数据对象
-   * @param {HTMLElement} row - 表格行元素 (.ant-table-row)
-   * @returns {Object|null} record 对象，失败返回 null
-   */
   function getRecordFromRow(row) {
     const keys = Object.keys(row);
     let fiberKey = null;
@@ -79,18 +70,18 @@
     return record;
   }
 
-  /**
-   * 从 localStorage 获取 enterprise_id
-   * @returns {string|null} eid 字符串，失败返回 null
-   */
   function getEid() {
     return localStorage.getItem('enterpriseId');
   }
 
-  /**
-   * 从当前页面 URL hash 参数中解析 exam_id
-   * @returns {string|null} exam_id 字符串，失败返回 null
-   */
+  function getUid() {
+    return localStorage.getItem('uid');
+  }
+
+  function getToken() {
+    return localStorage.getItem('token');
+  }
+
   function getExamId() {
     const hash = window.location.hash;
     if (!hash) return null;
@@ -100,11 +91,8 @@
     return params.get('exam_id');
   }
 
-  // ===== Phase 3: Fiber 数据提取结束 =====
+  // ===== DOM 辅助 =====
 
-  /**
-   * 尾部去抖函数
-   */
   function debounce(fn, delay) {
     let timer = null;
     return function (...args) {
@@ -113,9 +101,6 @@
     };
   }
 
-  /**
-   * 从 MutationRecord 中提取新增的表格行
-   */
   function extractNewRows(mutations) {
     const rows = [];
     for (const { addedNodes } of mutations) {
@@ -132,8 +117,17 @@
   }
 
   /**
-   * 处理单行表格：提取 Fiber 数据并暂存
+   * 定位操作列中的容器 div
+   * @returns {HTMLElement|null}
    */
+  function getOperateContainer(row) {
+    const fixRightCell = row.querySelector('.ant-table-cell-fix-right');
+    if (!fixRightCell) return null;
+    return fixRightCell.querySelector('div') || fixRightCell;
+  }
+
+  // ===== 按钮处理 =====
+
   function processRow(row) {
     const record = getRecordFromRow(row);
     if (!record) return;
@@ -147,15 +141,20 @@
     const examId = getExamId();
 
     rowDataMap.set(row, { record, eid, examId });
-    unlockDetailButton(row, { record, eid, examId });
+
+    const data = { record, eid, examId };
+
+    // 解锁灰色「作答详情」按钮
+    unlockDetailButton(row, data);
+
+    // 添加「下载试题」按钮（所有行）
+    addDownloadButton(row, data);
 
     console.log(
       `[${SCRIPT_NAME}] 提取成功: submit_id=${record.submit_id}, ` +
       `show_record=${record.show_record}, eid=${eid}, examId=${examId}`
     );
   }
-
-  // ===== Phase 4: 按钮解锁 =====
 
   /**
    * 解锁「作答详情」按钮：修改样式 + 绑定点击跳转
@@ -165,13 +164,13 @@
 
     if (record.show_record !== "false") return;
 
-    const fixRightCell = row.querySelector('.ant-table-cell-fix-right');
-    if (!fixRightCell) {
-      console.warn(`[${SCRIPT_NAME}] 未找到 .ant-table-cell-fix-right 单元格，可能页面结构已变化`);
+    const container = getOperateContainer(row);
+    if (!container) {
+      console.warn(`[${SCRIPT_NAME}] 未找到操作列容器`);
       return;
     }
 
-    const spans = fixRightCell.querySelectorAll('span');
+    const spans = container.querySelectorAll('span');
     let detailSpan = null;
     for (const span of spans) {
       if (span.textContent.trim() === '作答详情') {
@@ -181,7 +180,7 @@
     }
 
     if (!detailSpan) {
-      console.warn(`[${SCRIPT_NAME}] 未找到「作答详情」span，可能页面结构已变化`);
+      console.warn(`[${SCRIPT_NAME}] 未找到「作答详情」span`);
       return;
     }
 
@@ -207,11 +206,109 @@
     console.log(`[${SCRIPT_NAME}] 已解锁按钮: submit_id=${record.submit_id}`);
   }
 
-  // ===== Phase 4: 按钮解锁结束 =====
+  /**
+   * 添加「下载试题」按钮
+   * 调用 submit-info API 获取完整试题数据，保存为 ExamResponse.json
+   */
+  function addDownloadButton(row, data) {
+    const { record, eid, examId } = data;
+
+    const container = getOperateContainer(row);
+    if (!container) return;
+
+    // 创建下载按钮（与「作答详情」上下对齐）
+    const downloadSpan = document.createElement('span');
+    downloadSpan.textContent = '下载试题';
+    downloadSpan.style.cssText = 'display:block;color:rgb(0, 122, 255);cursor:pointer;margin-top:4px;';
+
+    downloadSpan.addEventListener('click', function (e) {
+      e.stopPropagation();
+      downloadExamPaper(record, eid, examId);
+    });
+
+    container.appendChild(downloadSpan);
+  }
 
   /**
-   * 处理新增的表格行（使用 data-processed 过滤重复处理）
+   * 获取考试标题
    */
+  function getExamTitle() {
+    const el = document.querySelector('.exam-title');
+    return el?.textContent?.trim() || 'Exam';
+  }
+
+  /**
+   * 生成下载文件名：姓名_考试题目_得分_作答时长_交卷时间.json
+   */
+  function buildFileName(record) {
+    const userName = localStorage.getItem('name') || '';
+    const title = getExamTitle();
+    const score = `${record.score}分`;
+    const durationSec = parseInt(record.answer_duration, 10) || 0;
+    const duration = `${Math.floor(durationSec / 60)}分${durationSec % 60}秒`;
+    const time = new Date(parseInt(record.submit_time, 10));
+    const timeStr = `${time.getFullYear()}${String(time.getMonth() + 1).padStart(2, '0')}${String(time.getDate()).padStart(2, '0')}_${String(time.getHours()).padStart(2, '0')}${String(time.getMinutes()).padStart(2, '0')}`;
+
+    const parts = [userName, title, score, duration, timeStr].filter(Boolean);
+    return `${parts.join('_')}.json`;
+  }
+
+  /**
+   * 调用 API 下载试题并保存为 JSON 文件
+   */
+  function downloadExamPaper(record, eid, examId) {
+    const uid = getUid();
+    const token = getToken();
+
+    if (!uid || !token || !eid) {
+      console.warn(`[${SCRIPT_NAME}] 缺少必要参数: uid=${uid}, token=${token ? '有' : '无'}, eid=${eid}`);
+      return;
+    }
+
+    const apiUrl = `https://coolapi.coolcollege.cn/new-exam-api/v2/enterprises/${eid}/users/${uid}/exams/${examId}/submit-info/${record.submit_id}?task_id=${record.task_id}`;
+    const fileName = buildFileName(record);
+
+    console.log(`[${SCRIPT_NAME}] 正在下载试题: ${fileName}`);
+
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url: apiUrl,
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'content-type': 'application/json',
+        'enterprise-id': eid,
+        'app-id': '3829',
+        'x-access-token': token
+      },
+      onload: function (response) {
+        if (response.status !== 200) {
+          console.warn(`[${SCRIPT_NAME}] API 请求失败: ${response.status}`);
+          return;
+        }
+
+        try {
+          const json = JSON.parse(response.responseText);
+          const blob = new Blob([JSON.stringify(json, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileName;
+          a.click();
+          URL.revokeObjectURL(url);
+
+          console.log(`[${SCRIPT_NAME}] 下载成功: ${fileName}`);
+        } catch (err) {
+          console.warn(`[${SCRIPT_NAME}] 解析响应失败: ${err.message}`);
+        }
+      },
+      onerror: function () {
+        console.warn(`[${SCRIPT_NAME}] 网络请求失败`);
+      }
+    });
+  }
+
+  // ===== MutationObserver =====
+
   function processRows(mutations) {
     const newRows = extractNewRows(mutations);
     const unprocessed = newRows.filter(row => !row.hasAttribute('data-processed'));
