@@ -16,10 +16,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### DOM Observation
 
-- [ ] **DOM-01**: 使用 MutationObserver 监听目标表格区域 DOM 变化
-- [ ] **DOM-02**: 使用去抖（300ms）避免频繁 DOM 变化导致的重复处理
-- [ ] **DOM-03**: 使用 `data-processed` 属性标记已处理的行，避免重复操作
-- [ ] **DOM-04**: 正确管理 Observer 生命周期（路由离开时 disconnect）
+- [x] **DOM-01**: 使用 MutationObserver 监听目标表格区域 DOM 变化
+- [x] **DOM-02**: 使用去抖（300ms）避免频繁 DOM 变化导致的重复处理
+- [x] **DOM-03**: 使用 `data-processed` 属性标记已处理的行，避免重复操作
+- [x] **DOM-04**: 正确管理 Observer 生命周期（路由离开时 disconnect）
 
 ### Data Extraction
 
@@ -72,10 +72,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INIT-02 | Phase 1 | Complete |
 | INIT-03 | Phase 1 | Complete |
 | INIT-04 | Phase 1 | Complete |
-| DOM-01 | Phase 2 | Pending |
-| DOM-02 | Phase 2 | Pending |
-| DOM-03 | Phase 2 | Pending |
-| DOM-04 | Phase 2 | Pending |
+| DOM-01 | Phase 2 | Complete |
+| DOM-02 | Phase 2 | Complete |
+| DOM-03 | Phase 2 | Complete |
+| DOM-04 | Phase 2 | Complete |
 | DATA-01 | Phase 3 | Pending |
 | DATA-02 | Phase 3 | Pending |
 | DATA-03 | Phase 3 | Pending |
