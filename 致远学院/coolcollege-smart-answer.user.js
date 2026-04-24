@@ -311,7 +311,10 @@
 
     for (const ans of answers) {
       for (const opt of question.options) {
-        if (ans === opt.text || opt.text.includes(ans) || ans.includes(opt.text)) {
+        // 精确匹配 或 选项文本包含答案文本
+        // 不使用 ans.includes(opt.text)，防止"不会..."误匹配"会..."
+        const isMatch = ans === opt.text || opt.text.includes(ans);
+        if (isMatch) {
           suggestedLetters.push(opt.letter);
           break;
         }
@@ -349,7 +352,7 @@
 
     for (const opt of question.options) {
       const matched = answers.some(ans =>
-        ans === opt.text || opt.text.includes(ans) || ans.includes(opt.text)
+        ans === opt.text || opt.text.includes(ans)
       );
       if (matched) {
         applyHighlight(opt.element, colorScheme);
