@@ -85,15 +85,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BTN-03 | Phase 4 | Pending |
 | BTN-04 | Phase 4 | Pending |
 | BTN-05 | Phase 4 | Pending |
-| ERR-01 | Phase 5 | Pending |
-| ERR-02 | Phase 5 | Pending |
-| ERR-03 | Phase 5 | Pending |
+| ERR-01 | Phase 4 | Pending |
+| ERR-02 | Phase 4 | Pending |
+| ERR-03 | Phase 4 | Pending |
 
 **Coverage:**
 - v1 requirements: 20 total
-- Mapped to phases: 20
+- Mapped to phases: 20 (4 phases)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-24*
-*Last updated: 2026-04-24 after initial definition*
+*Last updated: 2026-04-24 after roadmap creation*
