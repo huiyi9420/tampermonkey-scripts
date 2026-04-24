@@ -23,10 +23,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Data Extraction
 
-- [ ] **DATA-01**: 通过 React Fiber 属性获取表格行的 `record` 数据对象
-- [ ] **DATA-02**: 支持多个 Fiber 属性名 fallback（`__reactInternalInstance$`、`__reactFiber$`、`_reactInternals`）
-- [ ] **DATA-03**: 从 `record` 中提取 `submit_id`、`exam_id`、`task_id`、`show_record` 等字段
-- [ ] **DATA-04**: 从页面 URL 或 API 请求中获取 `enterprise_id`（eid）
+- [x] **DATA-01**: 通过 React Fiber 属性获取表格行的 `record` 数据对象
+- [x] **DATA-02**: 支持多个 Fiber 属性名 fallback（`__reactInternalInstance$`、`__reactFiber$`、`_reactInternals`）
+- [x] **DATA-03**: 从 `record` 中提取 `submit_id`、`exam_id`、`task_id`、`show_record` 等字段
+- [x] **DATA-04**: 从页面 URL 或 API 请求中获取 `enterprise_id`（eid）
 
 ### Button Processing
 
@@ -76,10 +76,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DOM-02 | Phase 2 | Complete |
 | DOM-03 | Phase 2 | Complete |
 | DOM-04 | Phase 2 | Complete |
-| DATA-01 | Phase 3 | Pending |
-| DATA-02 | Phase 3 | Pending |
-| DATA-03 | Phase 3 | Pending |
-| DATA-04 | Phase 3 | Pending |
+| DATA-01 | Phase 3 | Complete |
+| DATA-02 | Phase 3 | Complete |
+| DATA-03 | Phase 3 | Complete |
+| DATA-04 | Phase 3 | Complete |
 | BTN-01 | Phase 4 | Pending |
 | BTN-02 | Phase 4 | Pending |
 | BTN-03 | Phase 4 | Pending |
