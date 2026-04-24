@@ -441,9 +441,10 @@
         if (response.status === 200) {
           try {
             const result = JSON.parse(response.responseText);
-            // 递归查找响应中的数字型字段（题目数量）
-            const count = findNumberValue(result);
-            const msg = count !== null ? `成功${count}题` : '已上传';
+            // 响应格式: {"code":0,"data":{"message":"已添加50条"}}
+            const match = (result?.data?.message || '').match(/\d+/);
+            const count = match ? match[0] : '';
+            const msg = count ? `成功${count}题` : '已上传';
             console.log(`[${SCRIPT_NAME}] 上传成功: ${fileName} - ${msg}`);
             buttonEl.textContent = msg;
             buttonEl.style.color = '#52c41a';
