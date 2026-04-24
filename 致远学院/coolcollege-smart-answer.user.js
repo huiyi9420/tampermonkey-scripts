@@ -305,17 +305,34 @@
   /**
    * 将题库 answer 文本映射为选项字母
    */
+  /**
+   * 归一化文本：去标点空格，用于模糊比较
+   */
+  function normalizeText(s) {
+    return s.replace(/[\s，。？！、；：""''（）《》【】\(\)\[\]\{\},.?!;:'"<>/\\@#$%^&*+=\-_~`|·…—\-]/g, '');
+  }
+
+  function matchAnswerToOption(ans, optText) {
+    // 1. 精确匹配
+    if (ans === optText) return true;
+    // 2. 归一化后精确匹配
+    if (normalizeText(ans) === normalizeText(optText)) return true;
+    // 3. 选项包含答案：要求答案占选项 70% 以上，防止短答案误匹配长选项
+    if (optText.includes(ans) && ans.length > optText.length * 0.7) return true;
+    // 4. 归一化后包含匹配
+    const normAns = normalizeText(ans);
+    const normOpt = normalizeText(optText);
+    if (normOpt.includes(normAns) && normAns.length > normOpt.length * 0.7) return true;
+    return false;
+  }
+
   function mapAnswerToLetters(question, bankAnswer) {
     const answers = bankAnswer.split('|').map(a => a.trim());
     const suggestedLetters = [];
 
     for (const ans of answers) {
       for (const opt of question.options) {
-        const isMatch =
-          ans === opt.text ||
-          // 选项包含答案文本时，需长度接近（比值 > 0.8），防止短答案误匹配长选项
-          (opt.text.includes(ans) && ans.length > opt.text.length * 0.8);
-        if (isMatch) {
+        if (matchAnswerToOption(ans, opt.text)) {
           suggestedLetters.push(opt.letter);
           break;
         }
@@ -352,10 +369,7 @@
     const answers = item.answer.split('|').map(a => a.trim());
 
     for (const opt of question.options) {
-      const matched = answers.some(ans =>
-        ans === opt.text ||
-        (opt.text.includes(ans) && ans.length > opt.text.length * 0.8)
-      );
+      const matched = answers.some(ans => matchAnswerToOption(ans, opt.text));
       if (matched) {
         applyHighlight(opt.element, colorScheme);
       }
