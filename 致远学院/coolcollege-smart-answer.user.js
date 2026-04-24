@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CoolCollege 智能辅助答题
 // @namespace    https://github.com/coolcollege-unlock
-// @version      2.0.0
-// @description  自动匹配题库答案，用颜色标注选项与匹配率，实时动态预测得分区间，支持单选/多选题
+// @version      2.1.0
+// @description  自动匹配题库答案，用颜色标注选项与匹配率，实时动态预测得分区间，支持个人中心拦截、考试页辅助、详情页分析
 // @author       zhaolulu
 // @match        *://pro.coolcollege.cn/*
 // @match        *://question.a2008q.top/*
@@ -20,6 +20,8 @@
 
   const SCRIPT_NAME = '智能辅助答题';
   const DETAIL_PATH = '/training/examination/new-exam/parse';
+  const EXAMING_PATH = '/training/examination/new-exam/examing';
+  const PROFILE_HASH = '/personal/profile';
   const QUESTION_BANK_HOST = 'question.a2008q.top';
   const QUESTION_BANK_URL = 'https://question.a2008q.top';
 
@@ -29,16 +31,6 @@
     if (token) {
       GM_setValue('qb_token', token);
       console.log(`[${SCRIPT_NAME}] 题库 token 已同步`);
-    }
-    return;
-  }
-
-  // ===== 非目标页面：仅注册路由监听 =====
-  if (!window.location.href.includes(DETAIL_PATH)) {
-    if (typeof window.onurlchange === 'object' && window.onurlchange === null) {
-      window.addEventListener('urlchange', () => {
-        if (window.location.href.includes(DETAIL_PATH)) location.reload();
-      });
     }
     return;
   }
@@ -182,6 +174,72 @@
     card.appendChild(title);
     card.appendChild(desc);
     card.appendChild(btnGroup);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+  }
+
+  // ===== 就绪确认浮窗 =====
+
+  function showReadyConfirm(onContinue) {
+    if (document.getElementById('qb-ready-panel')) return;
+
+    const overlay = document.createElement('div');
+    overlay.id = 'qb-ready-panel';
+    overlay.style.cssText = `
+      position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+      z-index: 100000;
+      background: rgba(0, 0, 0, 0.45);
+      display: flex; align-items: center; justify-content: center;
+    `;
+
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background: #fff; border-radius: 12px;
+      padding: 32px 40px; text-align: center;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      max-width: 400px; width: 90%;
+    `;
+
+    const icon = document.createElement('div');
+    icon.style.cssText = `
+      width: 48px; height: 48px; margin: 0 auto 16px;
+      border-radius: 50%; background: #f6ffed;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; color: #52c41a;
+    `;
+    icon.textContent = '\u2713';
+
+    const title = document.createElement('h3');
+    title.style.cssText = 'margin: 0 0 8px; font-size: 18px; color: #262626;';
+    title.textContent = '辅助答题已就绪';
+
+    const desc = document.createElement('p');
+    desc.style.cssText = 'margin: 0 0 24px; font-size: 14px; color: #8c8c8c; line-height: 1.6;';
+    desc.textContent = '题库系统已登录，辅助答题功能将在考试页面自动启动。';
+
+    const continueBtn = document.createElement('button');
+    continueBtn.textContent = '继续';
+    continueBtn.style.cssText = `
+      width: 100%; padding: 10px 0; border: none; border-radius: 6px;
+      background: #52c41a; color: #fff; font-size: 15px; cursor: pointer;
+      transition: background 0.2s;
+    `;
+    continueBtn.addEventListener('mouseover', () => { continueBtn.style.background = '#73d13d'; });
+    continueBtn.addEventListener('mouseout', () => { continueBtn.style.background = '#52c41a'; });
+    continueBtn.addEventListener('click', () => {
+      card.style.transition = 'all 0.3s ease';
+      card.style.transform = 'scale(0.95)';
+      card.style.opacity = '0';
+      setTimeout(() => {
+        overlay.remove();
+        onContinue();
+      }, 300);
+    });
+
+    card.appendChild(icon);
+    card.appendChild(title);
+    card.appendChild(desc);
+    card.appendChild(continueBtn);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
   }
@@ -576,7 +634,123 @@
     if (fill) fill.style.width = `${pct}%`;
   }
 
-  // ===== 主流程 =====
+  // ===== 个人中心按钮拦截 =====
+
+  let profileObserver = null;
+
+  function initProfileGuard() {
+    if (profileObserver) { profileObserver.disconnect(); profileObserver = null; }
+    console.log(`[${SCRIPT_NAME}] 个人中心拦截初始化`);
+
+    function interceptButton(btn) {
+      const text = btn.textContent?.trim();
+      if (text !== '开始考试' && text !== '重考') return;
+      if (btn.hasAttribute('data-qb-intercepted')) return;
+      btn.setAttribute('data-qb-intercepted', '1');
+
+      btn.addEventListener('click', async function (e) {
+        // 放行标记：确认后二次点击时直接通过
+        if (btn.hasAttribute('data-qb-allowed')) {
+          btn.removeAttribute('data-qb-allowed');
+          return;
+        }
+
+        e.stopPropagation();
+        e.preventDefault();
+
+        const authToken = getAuthToken();
+        if (authToken && await validateToken(authToken)) {
+          showReadyConfirm(() => {
+            btn.setAttribute('data-qb-allowed', '1');
+            btn.click();
+          });
+        } else {
+          GM_setValue('qb_token', null);
+          showLoginPanel(() => {
+            btn.setAttribute('data-qb-allowed', '1');
+            btn.click();
+          });
+        }
+      }, true);
+    }
+
+    document.querySelectorAll('button').forEach(interceptButton);
+
+    profileObserver = new MutationObserver((mutations) => {
+      for (const { addedNodes } of mutations) {
+        for (const node of addedNodes) {
+          if (node.nodeType !== Node.ELEMENT_NODE) continue;
+          if (node.tagName === 'BUTTON') interceptButton(node);
+          node.querySelectorAll?.('button').forEach(interceptButton);
+        }
+      }
+    });
+    profileObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
+  // ===== 考试页辅助 =====
+
+  function initExamAssist() {
+    console.log(`[${SCRIPT_NAME}] 考试页辅助初始化`);
+
+    const authToken = getAuthToken();
+    if (!authToken) {
+      console.warn(`[${SCRIPT_NAME}] 考试页未检测到题库 token`);
+      return;
+    }
+
+    validateToken(authToken).then(valid => {
+      if (!valid) {
+        console.warn(`[${SCRIPT_NAME}] 考试页题库 token 无效`);
+        return;
+      }
+
+      function tryExtract(retries) {
+        if (retries <= 0) {
+          console.warn(`[${SCRIPT_NAME}] 考试页未发现题目`);
+          return;
+        }
+        const questions = extractQuestions();
+        if (questions.length > 0) {
+          console.log(`[${SCRIPT_NAME}] 考试页发现 ${questions.length} 道题`);
+          processExamQuestions(questions, authToken);
+        } else {
+          console.log(`[${SCRIPT_NAME}] 等待题目加载，剩余重试 ${retries} 次`);
+          setTimeout(() => tryExtract(retries - 1), 1000);
+        }
+      }
+
+      setTimeout(() => tryExtract(10), 1000);
+    });
+  }
+
+  async function processExamQuestions(questions, authToken) {
+    const total = questions.length;
+    let completed = 0;
+    const progressBar = createProgressBar(total);
+    const queue = [...questions];
+
+    async function worker() {
+      while (queue.length > 0) {
+        const question = queue.shift();
+        try {
+          const result = await searchQuestionBank(question.pureText, authToken);
+          if (result && result.item) {
+            highlightOptions(question, result);
+          }
+        } catch (e) {
+          console.warn(`[${SCRIPT_NAME}] 搜索失败: ${e.message}`);
+        }
+        completed++;
+        updateProgress(progressBar, completed, total);
+      }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()));
+    setTimeout(() => progressBar.remove(), 2000);
+  }
+
+  // ===== 答题详情页主流程 =====
 
   function startMatching() {
     const authToken = getAuthToken();
@@ -600,8 +774,8 @@
     }, 500);
   }
 
-  async function init() {
-    console.log(`[${SCRIPT_NAME}] 初始化`);
+  async function initDetailPage() {
+    console.log(`[${SCRIPT_NAME}] 答题详情页初始化`);
 
     const authToken = getAuthToken();
 
@@ -616,9 +790,29 @@
     }
   }
 
-  init();
+  // ===== 路由分发器 =====
+
+  function route() {
+    const href = window.location.href;
+
+    // 清理上一页的观察器
+    if (profileObserver) {
+      profileObserver.disconnect();
+      profileObserver = null;
+    }
+
+    if (href.includes(DETAIL_PATH)) {
+      initDetailPage();
+    } else if (href.includes(EXAMING_PATH)) {
+      initExamAssist();
+    } else if (href.includes(PROFILE_HASH)) {
+      initProfileGuard();
+    }
+  }
+
+  route();
 
   if (typeof window.onurlchange === 'object' && window.onurlchange === null) {
-    window.addEventListener('urlchange', () => init());
+    window.addEventListener('urlchange', () => route());
   }
 })();
