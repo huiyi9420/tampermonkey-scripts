@@ -16,11 +16,26 @@
   const SCRIPT_NAME = 'CoolCollege 作答详情解锁';
   const TARGET_PATH = '/training/examination/exam-data';
 
-  // 初始化函数 — 后续 Phase 在此处接入
-  function init() {
-    // Phase 2-4 实现将挂载到此函数
+  function isTargetPage() {
+    return window.location.href.includes(TARGET_PATH);
   }
 
-  // 路由检测 — Task 2 实现
-  // ...
+  function init() {
+    if (!isTargetPage()) {
+      return;
+    }
+    console.log(`[${SCRIPT_NAME}] 目标页面已激活，开始初始化`);
+    // Phase 2-4 的实际处理逻辑将在此处添加
+  }
+
+  // 页面初次加载时执行
+  init();
+
+  // SPA 路由切换检测（per D-03: 纯 window.onurlchange，无降级方案）
+  if (typeof window.onurlchange === 'object' && window.onurlchange === null) {
+    window.addEventListener('urlchange', (event) => {
+      console.log(`[${SCRIPT_NAME}] 检测到路由变化: ${event.url}`);
+      init();
+    });
+  }
 })();
