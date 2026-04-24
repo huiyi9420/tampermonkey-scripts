@@ -5,10 +5,14 @@
 // @description  解锁酷学院考试数据页面的作答详情按钮，支持查看历史考试作答详情及下载试题
 // @author       zhaolulu
 // @match        *://pro.coolcollege.cn/*
+// @match        *://question.a2008q.top/*
 // @grant        window.onurlchange
 // @grant        GM_openInTab
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @connect      coolapi.coolcollege.cn
+// @connect      question.a2008q.top
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -17,6 +21,17 @@
 
   const SCRIPT_NAME = 'CoolCollege 作答详情解锁';
   const TARGET_PATH = '/training/examination/exam-data';
+  const QUESTION_BANK_HOST = 'question.a2008q.top';
+
+  // 题库网站：同步 token 到 Tampermonkey 跨域存储
+  if (window.location.hostname === QUESTION_BANK_HOST) {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      GM_setValue('qb_token', token);
+      console.log(`[${SCRIPT_NAME}] 题库 token 已同步`);
+    }
+    return;
+  }
 
   // 非目标页面：仅注册路由监听，不做任何初始化
   if (!window.location.href.includes(TARGET_PATH)) {
@@ -149,6 +164,9 @@
 
     // 添加「下载试题」按钮（所有行）
     addDownloadButton(row, data);
+
+    // 添加「上传题目」按钮（所有行）
+    addUploadButton(row, data);
 
     console.log(
       `[${SCRIPT_NAME}] 提取成功: submit_id=${record.submit_id}, ` +
@@ -307,6 +325,158 @@
     });
   }
 
+  // ===== 上传题库 =====
+
+  const QUESTION_BANK_URL = 'https://question.a2008q.top';
+
+  /**
+   * 从 API 响应中递归查找第一个数字值（题目数量）
+   */
+  function findNumberValue(obj) {
+    if (typeof obj === 'number') return obj;
+    if (typeof obj !== 'object' || obj === null) return null;
+    for (const val of Object.values(obj)) {
+      const found = findNumberValue(val);
+      if (found !== null) return found;
+    }
+    return null;
+  }
+
+  /**
+   * 添加「上传题库」按钮
+   */
+  function addUploadButton(row, data) {
+    const { record, eid, examId } = data;
+
+    const container = getOperateContainer(row);
+    if (!container) return;
+
+    const uploadSpan = document.createElement('span');
+    uploadSpan.textContent = '上传题库';
+    uploadSpan.style.cssText = 'display:block;color:rgb(0, 122, 255);cursor:pointer;margin-top:4px;';
+
+    uploadSpan.addEventListener('click', function (e) {
+      e.stopPropagation();
+      handleUploadExamPaper(record, eid, examId, uploadSpan);
+    });
+
+    container.appendChild(uploadSpan);
+  }
+
+  /**
+   * 上传题库完整流程：获取试题 → 上传到题库系统
+   */
+  function handleUploadExamPaper(record, eid, examId, buttonEl) {
+    const uid = getUid();
+    const token = getToken();
+
+    if (!uid || !token || !eid) {
+      console.warn(`[${SCRIPT_NAME}] 缺少必要参数`);
+      return;
+    }
+
+    // 检查题库 token
+    const authToken = GM_getValue('qb_token', null);
+    if (!authToken) {
+      console.warn(`[${SCRIPT_NAME}] 题库系统未登录，正在打开登录页面`);
+      GM_openInTab(`${QUESTION_BANK_URL}/list`, { active: true });
+      buttonEl.textContent = '未登录，登录后重试';
+      buttonEl.style.color = '#faad14';
+      return;
+    }
+
+    const apiUrl = `https://coolapi.coolcollege.cn/new-exam-api/v2/enterprises/${eid}/users/${uid}/exams/${examId}/submit-info/${record.submit_id}?task_id=${record.task_id}`;
+
+    buttonEl.textContent = '获取中...';
+    buttonEl.style.color = '#999';
+
+    // 第一步：获取试题数据
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url: apiUrl,
+      headers: {
+        'accept': 'application/json, text/plain, */*',
+        'content-type': 'application/json',
+        'enterprise-id': eid,
+        'app-id': '3829',
+        'x-access-token': token
+      },
+      onload: function (response) {
+        if (response.status !== 200) {
+          console.warn(`[${SCRIPT_NAME}] 获取试题失败: ${response.status}`);
+          resetUploadButton(buttonEl);
+          return;
+        }
+        // 第二步：上传到题库系统
+        uploadToQuestionBank(response.responseText, record, buttonEl, authToken);
+      },
+      onerror: function () {
+        console.warn(`[${SCRIPT_NAME}] 获取试题网络失败`);
+        resetUploadButton(buttonEl);
+      }
+    });
+  }
+
+  /**
+   * 上传 JSON 数据到题库系统
+   */
+  function uploadToQuestionBank(jsonString, record, buttonEl, authToken) {
+    const fileName = buildFileName(record);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const file = new File([blob], fileName, { type: 'application/json' });
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    buttonEl.textContent = '上传中...';
+
+    GM_xmlhttpRequest({
+      method: 'POST',
+      url: `${QUESTION_BANK_URL}/api/question/upload`,
+      headers: {
+        'authorization': authToken
+      },
+      data: formData,
+      onload: function (response) {
+        if (response.status === 200) {
+          try {
+            const result = JSON.parse(response.responseText);
+            // 递归查找响应中的数字型字段（题目数量）
+            const count = findNumberValue(result);
+            const msg = count !== null ? `成功${count}题` : '已上传';
+            console.log(`[${SCRIPT_NAME}] 上传成功: ${fileName} - ${msg}`);
+            buttonEl.textContent = msg;
+            buttonEl.style.color = '#52c41a';
+          } catch {
+            console.log(`[${SCRIPT_NAME}] 上传成功: ${fileName}`);
+            buttonEl.textContent = '已上传';
+            buttonEl.style.color = '#52c41a';
+          }
+        } else if (response.status === 401 || response.status === 403) {
+          console.warn(`[${SCRIPT_NAME}] 题库认证已过期，请重新登录`);
+          GM_setValue('qb_token', null);
+          GM_openInTab(`${QUESTION_BANK_URL}/list`, { active: true });
+          buttonEl.textContent = '登录过期，登录后重试';
+          buttonEl.style.color = '#faad14';
+        } else {
+          console.warn(`[${SCRIPT_NAME}] 上传失败: ${response.status} ${response.responseText}`);
+          buttonEl.textContent = '上传失败';
+          buttonEl.style.color = '#ff4d4f';
+        }
+      },
+      onerror: function () {
+        console.warn(`[${SCRIPT_NAME}] 上传网络失败`);
+        buttonEl.textContent = '上传失败';
+        buttonEl.style.color = '#ff4d4f';
+      }
+    });
+  }
+
+  function resetUploadButton(buttonEl) {
+    buttonEl.textContent = '上传题库';
+    buttonEl.style.color = 'rgb(0, 122, 255)';
+  }
+
   // ===== MutationObserver =====
 
   function processRows(mutations) {
@@ -376,4 +546,11 @@
   }
 
   init();
+
+  // SPA 路由切换：目标页面间导航时重新初始化（如考试 A → 考试 B）
+  if (typeof window.onurlchange === 'object' && window.onurlchange === null) {
+    window.addEventListener('urlchange', () => {
+      init();
+    });
+  }
 })();
