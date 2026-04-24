@@ -28,7 +28,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. 访问 pro.coolcollege.cn 考试数据页面时脚本自动执行，访问其他页面时不执行
   3. 在考试数据页面内进行 SPA 导航（如切换到其他标签再切回）时，脚本能重新检测并触发初始化
   4. 控制台输出初始化日志，确认脚本在页面加载和路由切换时均被触发
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [ ] 01-01-PLAN.md — 创建 Tampermonkey metadata、URL 匹配、SPA 路由检测和初始化逻辑
 
 ### Phase 2: DOM 变化监听
 **Goal**: 脚本能可靠检测表格数据的动态加载，为后续按钮处理提供触发机制
@@ -71,7 +74,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 脚本脚手架与路由感知 | 0/? | Not started | - |
+| 1. 脚本脚手架与路由感知 | 0/1 | Not started | - |
 | 2. DOM 变化监听 | 0/? | Not started | - |
 | 3. React Fiber 数据提取 | 0/? | Not started | - |
 | 4. 按钮启用与健壮性 | 0/? | Not started | - |
