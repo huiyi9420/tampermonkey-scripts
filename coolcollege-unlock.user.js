@@ -21,11 +21,87 @@
    */
   let currentObserver = null;
 
+  /**
+   * 暂存每行提取的 record 数据，供 Phase 4 按钮处理使用
+   * key: 行 DOM 元素, value: { record, eid, examId }
+   */
+  const rowDataMap = new Map();
+
   function isTargetPage() {
     return window.location.href.includes(TARGET_PATH);
   }
 
   // ===== Phase 2: DOM 变化监听辅助函数 =====
+
+  // ===== Phase 3: React Fiber 数据提取 =====
+
+  /**
+   * Fiber key 前缀列表，按优先级排序 (D-01, D-02)
+   * React 17: __reactInternalInstance$ (已验证酷学院使用)
+   * React 18: __reactFiber$
+   * 旧版本: _reactInternals
+   */
+  const FIBER_KEY_PREFIXES = [
+    '__reactInternalInstance$',
+    '__reactFiber$',
+    '_reactInternals'
+  ];
+
+  /**
+   * 从表格行元素中通过 React Fiber 提取 record 数据对象 (D-03)
+   * @param {HTMLElement} row - 表格行元素 (.ant-table-row)
+   * @returns {Object|null} record 对象，失败返回 null
+   */
+  function getRecordFromRow(row) {
+    // 遍历行元素的所有属性，查找 Fiber key
+    const keys = Object.keys(row);
+    let fiberKey = null;
+    for (const prefix of FIBER_KEY_PREFIXES) {
+      fiberKey = keys.find(k => k.startsWith(prefix));
+      if (fiberKey) break;
+    }
+
+    if (!fiberKey) {
+      console.warn(`[${SCRIPT_NAME}] 未找到 Fiber 属性，跳过行`);
+      return null;
+    }
+
+    const fiber = row[fiberKey];
+
+    // 已验证路径: fiber.return.memoizedProps.record (depth=1)
+    const record = fiber?.return?.memoizedProps?.record;
+
+    if (!record) {
+      console.warn(`[${SCRIPT_NAME}] Fiber 路径中未找到 record 对象`);
+      return null;
+    }
+
+    return record;
+  }
+
+  /**
+   * 从 localStorage 获取 enterprise_id (D-05)
+   * @returns {string|null} eid 字符串，失败返回 null
+   */
+  function getEid() {
+    return localStorage.getItem('enterpriseId');
+  }
+
+  /**
+   * 从当前页面 URL hash 参数中解析 exam_id (D-06)
+   * URL 格式: #/training/examination/exam-data?exam_id=xxx&from=myTask&task_id=xxx
+   * @returns {string|null} exam_id 字符串，失败返回 null
+   */
+  function getExamId() {
+    const hash = window.location.hash;
+    if (!hash) return null;
+    const queryPart = hash.split('?')[1];
+    if (!queryPart) return null;
+    const params = new URLSearchParams(queryPart);
+    return params.get('exam_id');
+  }
+
+  // ===== Phase 3: Fiber 数据提取结束 =====
 
   /**
    * 尾部去抖函数
@@ -62,11 +138,30 @@
   }
 
   /**
-   * 处理单行表格（Phase 2 存根，Phase 4 填充实际按钮处理逻辑）
+   * 处理单行表格：提取 Fiber 数据并暂存 (D-07)
+   * Phase 3: Fiber 数据提取与暂存，Phase 4 在此基础上添加按钮处理
    * @param {HTMLElement} row - 表格行元素
    */
   function processRow(row) {
-    console.log(`[${SCRIPT_NAME}] 处理行: ${row.getAttribute('data-row-key') || 'unknown'}`);
+    const record = getRecordFromRow(row);
+    if (!record) return;
+
+    // 检查关键字段 submit_id (DATA-03)
+    if (!record.submit_id) {
+      console.warn(`[${SCRIPT_NAME}] record 缺少 submit_id，跳过行`);
+      return;
+    }
+
+    const eid = getEid();
+    const examId = getExamId();
+
+    // 暂存到 Map (D-07)
+    rowDataMap.set(row, { record, eid, examId });
+
+    console.log(
+      `[${SCRIPT_NAME}] 提取成功: submit_id=${record.submit_id}, ` +
+      `show_record=${record.show_record}, eid=${eid}, examId=${examId}`
+    );
   }
 
   /**
@@ -79,6 +174,7 @@
     if (unprocessed.length === 0) return;
     for (const row of unprocessed) {
       row.setAttribute('data-processed', 'true');
+      processRow(row);
     }
     console.log(`[${SCRIPT_NAME}] 处理了 ${unprocessed.length} 行`);
   }
