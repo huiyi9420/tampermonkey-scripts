@@ -444,7 +444,7 @@
             // 响应格式: {"code":0,"data":{"message":"已添加50条"}}
             const match = (result?.data?.message || '').match(/\d+/);
             const count = match ? match[0] : '';
-            const msg = count ? `成功${count}题` : '已上传';
+            const msg = `成功${count || 0}题`;
             console.log(`[${SCRIPT_NAME}] 上传成功: ${fileName} - ${msg}`);
             buttonEl.textContent = msg;
             buttonEl.style.color = '#52c41a';
