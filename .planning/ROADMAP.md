@@ -71,7 +71,10 @@ Plans:
   3. 跳转 URL 包含正确的 exam_id、submit_id、task_id、eid 参数，页面正常加载
   4. 某些行的 Fiber 数据不存在或 submit_id 缺失时，脚本不报错，仅跳过这些行并在控制台输出警告
   5. 页面结构发生变化导致选择器失效时，控制台输出明确的警告信息，不影响页面正常使用
-**Plans**: TBD
+**Plans**: 1 plan
+
+Plans:
+- [x] 04-01-PLAN.md — unlockDetailButton 函数实现 + processRow 集成 + 错误处理验证
 
 ## Progress
 
@@ -83,4 +86,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4
 | 1. 脚本脚手架与路由感知 | 1/1 | Complete   | 2026-04-24 |
 | 2. DOM 变化监听 | 1/1 | Complete    | 2026-04-24 |
 | 3. React Fiber 数据提取 | 1/1 | Complete    | 2026-04-24 |
-| 4. 按钮启用与健壮性 | 0/? | Not started | - |
+| 4. 按钮启用与健壮性 | 0/1 | Planning complete | - |

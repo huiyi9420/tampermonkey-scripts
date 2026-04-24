@@ -30,17 +30,17 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Button Processing
 
-- [ ] **BTN-01**: 检测所有 `show_record === "false"` 的灰色作答详情按钮
-- [ ] **BTN-02**: 将灰色按钮样式修改为蓝色可点击（`color: rgb(0, 122, 255); cursor: pointer`）
-- [ ] **BTN-03**: 为按钮绑定点击事件处理器
-- [ ] **BTN-04**: 点击时使用 `GM_openInTab` 在新标签页打开作答详情
-- [ ] **BTN-05**: 跳转 URL 格式正确（包含 exam_id、submit_id、task_id、eid）
+- [x] **BTN-01**: 检测所有 `show_record === "false"` 的灰色作答详情按钮
+- [x] **BTN-02**: 将灰色按钮样式修改为蓝色可点击（`color: rgb(0, 122, 255); cursor: pointer`）
+- [x] **BTN-03**: 为按钮绑定点击事件处理器
+- [x] **BTN-04**: 点击时使用 `GM_openInTab` 在新标签页打开作答详情
+- [x] **BTN-05**: 跳转 URL 格式正确（包含 exam_id、submit_id、task_id、eid）
 
 ### Error Handling
 
-- [ ] **ERR-01**: Fiber 属性不存在时优雅降级（跳过该行而非报错）
-- [ ] **ERR-02**: record 数据缺失 `submit_id` 时跳过该行
-- [ ] **ERR-03**: 页面结构变化导致选择器失效时输出控制台警告
+- [x] **ERR-01**: Fiber 属性不存在时优雅降级（跳过该行而非报错）
+- [x] **ERR-02**: record 数据缺失 `submit_id` 时跳过该行
+- [x] **ERR-03**: 页面结构变化导致选择器失效时输出控制台警告
 
 ## v2 Requirements
 
@@ -80,14 +80,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DATA-02 | Phase 3 | Complete |
 | DATA-03 | Phase 3 | Complete |
 | DATA-04 | Phase 3 | Complete |
-| BTN-01 | Phase 4 | Pending |
-| BTN-02 | Phase 4 | Pending |
-| BTN-03 | Phase 4 | Pending |
-| BTN-04 | Phase 4 | Pending |
-| BTN-05 | Phase 4 | Pending |
-| ERR-01 | Phase 4 | Pending |
-| ERR-02 | Phase 4 | Pending |
-| ERR-03 | Phase 4 | Pending |
+| BTN-01 | Phase 4 | Complete |
+| BTN-02 | Phase 4 | Complete |
+| BTN-03 | Phase 4 | Complete |
+| BTN-04 | Phase 4 | Complete |
+| BTN-05 | Phase 4 | Complete |
+| ERR-01 | Phase 4 | Complete |
+| ERR-02 | Phase 4 | Complete |
+| ERR-03 | Phase 4 | Complete |
 
 **Coverage:**
 - v1 requirements: 20 total
