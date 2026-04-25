@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         CoolCollege 智能辅助答题
 // @namespace    https://github.com/coolcollege-unlock
-// @version      2.2.0
-// @description  自动匹配题库答案，用颜色标注选项与匹配率，实时动态预测得分区间，支持个人中心拦截、考试页辅助、详情页分析
+// @version      2.3.0
+// @description  精准匹配题库答案，选项左侧绿色高亮 + 下方匹配结果区块，实时动态预测得分区间，支持个人中心拦截、考试页辅助、详情页分析
 // @author       zhaolulu
 // @match        *://pro.coolcollege.cn/*
 // @match        *://question.a2008q.top/*
@@ -39,12 +39,41 @@
   const MATCH_THRESHOLD = 0.6;
   const HIGH_CONFIDENCE = 0.95;
   const SEARCH_PAGE_SIZE = 5;
-  const CONCURRENCY = 5;
-  const COLORS = {
-    high: { bg: 'rgba(82, 196, 26, 0.15)', border: '#52c41a', text: '#389e0d' },
-    medium: { bg: 'rgba(250, 173, 20, 0.15)', border: '#faad14', text: '#d48806' },
-    low: { bg: 'rgba(210, 77, 8, 0.15)', border: '#d46b08', text: '#873800' }
-  };
+  const MIN_CONCURRENCY = 5;
+  const MAX_CONCURRENCY = 15;
+  const LATENCY_SAMPLE_SIZE = 5;
+  const LATENCY_HIGH_MS = 2000;
+  const LATENCY_LOW_MS = 800;
+
+  /**
+   * 自适应并发控制器
+   * - 初始并发 15，根据实际请求延迟动态调整
+   * - 延迟 > 2s：减少 2（下限 5）
+   * - 延迟 < 800ms：增加 1（上限 15）
+   */
+  let adaptiveMaxWorkers = MAX_CONCURRENCY;
+  const latencyHistory = [];
+
+  function adjustConcurrency(latencyMs) {
+    latencyHistory.push(latencyMs);
+    if (latencyHistory.length < LATENCY_SAMPLE_SIZE) return;
+
+    // 只保留最近的样本
+    if (latencyHistory.length > LATENCY_SAMPLE_SIZE * 2) {
+      latencyHistory.splice(0, LATENCY_SAMPLE_SIZE);
+    }
+
+    const recent = latencyHistory.slice(-LATENCY_SAMPLE_SIZE);
+    const avgLatency = recent.reduce((a, b) => a + b, 0) / recent.length;
+
+    if (avgLatency > LATENCY_HIGH_MS && adaptiveMaxWorkers > MIN_CONCURRENCY) {
+      adaptiveMaxWorkers = Math.max(MIN_CONCURRENCY, adaptiveMaxWorkers - 2);
+      console.log(`[${SCRIPT_NAME}] 延迟增高(${Math.round(avgLatency)}ms)，并发降至 ${adaptiveMaxWorkers}`);
+    } else if (avgLatency < LATENCY_LOW_MS && adaptiveMaxWorkers < MAX_CONCURRENCY) {
+      adaptiveMaxWorkers = Math.min(MAX_CONCURRENCY, adaptiveMaxWorkers + 1);
+      console.log(`[${SCRIPT_NAME}] 延迟正常(${Math.round(avgLatency)}ms)，并发升至 ${adaptiveMaxWorkers}`);
+    }
+  }
 
   // ===== 工具函数 =====
 
@@ -323,6 +352,11 @@
 
   // ===== 题库搜索 =====
 
+  /**
+   * 认证失效标志：一旦检测到，停止所有 worker
+   */
+  let authExpired = false;
+
   function searchQuestionBank(questionText, authToken) {
     return new Promise((resolve) => {
       GM_xmlhttpRequest({
@@ -332,7 +366,12 @@
         onload: function (response) {
           try {
             const result = JSON.parse(response.responseText);
-            if (result.code !== 0 || !result.data?.data?.length) {
+            // 认证失效：code 不为 0 且不是"无数据"
+            if (result.code !== 0) {
+              resolve({ authFailed: true });
+              return;
+            }
+            if (!result.data?.data?.length) {
               resolve(null);
               return;
             }
@@ -358,13 +397,25 @@
     });
   }
 
-  // ===== 答案匹配判定 =====
+  /**
+   * 处理认证失效：清除 token、停止队列、弹登录面板
+   */
+  function handleAuthExpired(progressBar) {
+    if (authExpired) return; // 防止多个 worker 重复触发
+    authExpired = true;
+    GM_setValue('qb_token', null);
+    if (progressBar) progressBar.remove();
+    console.warn(`[${SCRIPT_NAME}] 题库认证已过期，请重新登录`);
+    showLoginPanel(() => {
+      // 重新登录后刷新页面重新匹配
+      location.reload();
+    });
+  }
+
+  // ===== 文本工具 =====
 
   /**
-   * 将题库 answer 文本映射为选项字母
-   */
-  /**
-   * 归一化文本：去标点空格，用于模糊比较
+   * 归一化文本：去标点空格，用于精确比较
    */
   function normalizeText(s) {
     return s.replace(/[\s，。？！、；：""''（）《》【】\(\)\[\]\{\},.?!;:'"<>/\\@#$%^&*+=\-_~`|·…—\-]/g, '');
@@ -377,32 +428,44 @@
     return ans.replace(/^[A-Z][：:]\s*/, '').trim();
   }
 
-  function matchAnswerToOption(ans, optText) {
-    // 1. 精确匹配
+  // ===== 答案匹配判定 =====
+
+  /**
+   * 精准匹配：仅精确/归一化精确匹配（用于高亮选项）
+   * 解决 "支持" 被误匹配到 "不支持" 的问题
+   */
+  function matchAnswerExact(ans, optText) {
     if (ans === optText) return true;
-    // 2. 归一化后精确匹配
     if (normalizeText(ans) === normalizeText(optText)) return true;
-    // 3. 选项包含答案：要求答案占选项 60% 以上，防止短答案误匹配长选项
+    return false;
+  }
+
+  /**
+   * 模糊匹配：包含关系（仅用于 mapAnswerToLetters 判定得分）
+   */
+  function matchAnswerFuzzy(ans, optText) {
+    if (matchAnswerExact(ans, optText)) return true;
     if (optText.includes(ans) && ans.length > optText.length * 0.6) return true;
-    // 4. 归一化后包含匹配
     const normAns = normalizeText(ans);
     const normOpt = normalizeText(optText);
     if (normOpt.includes(normAns) && normAns.length > normOpt.length * 0.6) return true;
     return false;
   }
 
+  /**
+   * 将题库 answer 文本映射为选项字母（用于得分预测）
+   */
   function mapAnswerToLetters(question, bankAnswer) {
     const answers = bankAnswer.split('|').map(a => cleanAnswerText(a.trim()));
     const suggestedLetters = [];
 
     for (const ans of answers) {
-      // 单字母直接匹配
       if (/^[A-Z]$/.test(ans)) {
         suggestedLetters.push(ans);
         continue;
       }
       for (const opt of question.options) {
-        if (matchAnswerToOption(ans, opt.text)) {
+        if (matchAnswerFuzzy(ans, opt.text)) {
           suggestedLetters.push(opt.letter);
           break;
         }
@@ -419,76 +482,197 @@
     if (correctLetters.length === 0) return false;
 
     if (isMultiChoice) {
-      // 多选：必须完全匹配（不多不少）
       if (suggestedLetters.length !== correctLetters.length) return false;
       const suggested = new Set(suggestedLetters);
       return correctLetters.every(l => suggested.has(l));
     } else {
-      // 单选：建议的首个字母匹配正确答案
       return suggestedLetters.length > 0 && correctLetters.includes(suggestedLetters[0]);
     }
   }
 
-  // ===== 选项匹配与标注 =====
+  // ===== 精准高亮 + 匹配结果展示 =====
 
-  function highlightOptions(question, bankResult) {
+  /**
+   * 精准高亮选项（左侧绿色边框）
+   */
+  function applyPreciseHighlight(element) {
+    element.style.cssText = `
+      background: rgba(82, 196, 26, 0.18) !important;
+      border-left: 3px solid #52c41a !important;
+      border-radius: 0 4px 4px 0 !important;
+      padding-left: 10px !important;
+      transition: all 0.2s ease;
+    `;
+  }
+
+  /**
+   * 展示题库匹配结果区块（选项下方，仿解析区域样式）
+   * 多选题每个答案渲染一行
+   */
+  function showMatchResultBlock(question, bankResult) {
     const { similarity, item } = bankResult;
     if (similarity < MATCH_THRESHOLD || !item?.answer) return;
+    if (question.div.querySelector('.qb-result-block')) return;
 
-    const colorScheme = similarity >= HIGH_CONFIDENCE ? COLORS.high : COLORS.medium;
+    const pct = Math.round(similarity * 100);
+    const pctColor = similarity >= HIGH_CONFIDENCE ? '#52c41a' : '#faad14';
+
+    // 解析每个答案
     const answers = item.answer.split('|').map(a => a.trim());
+    const answerEntries = [];
 
-    for (const opt of question.options) {
-      const matched = answers.some(ans => {
-        const cleaned = cleanAnswerText(ans);
-        // 单字母直接匹配选项
-        if (/^[A-Z]$/.test(cleaned)) return cleaned === opt.letter;
-        return matchAnswerToOption(cleaned, opt.text);
-      });
-      if (matched) {
-        applyHighlight(opt.element, colorScheme);
+    for (const ans of answers) {
+      const cleaned = cleanAnswerText(ans);
+      if (/^[A-Z]$/.test(cleaned)) {
+        // 纯字母答案
+        answerEntries.push({ letter: cleaned, text: '' });
+      } else {
+        // 文本答案：通过精准匹配找对应选项字母
+        let matchedLetter = null;
+        for (const opt of question.options) {
+          if (matchAnswerExact(cleaned, opt.text)) {
+            matchedLetter = opt.letter;
+            break;
+          }
+        }
+        answerEntries.push({ letter: matchedLetter, text: cleaned });
       }
     }
 
-    showMatchBadge(question.div, similarity);
+    // 构建区块
+    const block = document.createElement('div');
+    block.className = 'qb-result-block';
+    block.style.cssText = `
+      margin-top: 12px; padding: 10px 14px;
+      background: #fffbe6; border: 1px solid #ffe58f;
+      border-radius: 4px; font-size: 14px; line-height: 1.8;
+    `;
+
+    // 标题行
+    const titleDiv = document.createElement('div');
+    titleDiv.style.cssText = `
+      font-weight: 600; font-size: 14px; margin-bottom: 6px;
+      display: flex; align-items: center; gap: 8px; color: #262626;
+    `;
+
+    const titleText = document.createElement('span');
+    titleText.textContent = '题库匹配';
+
+    const pctBadge = document.createElement('span');
+    pctBadge.style.cssText = `
+      display: inline-block; padding: 1px 8px; border-radius: 3px;
+      font-size: 12px; color: #fff; background: ${pctColor}; font-weight: 500;
+    `;
+    pctBadge.textContent = `匹配 ${pct}%`;
+
+    titleDiv.appendChild(titleText);
+    titleDiv.appendChild(pctBadge);
+    block.appendChild(titleDiv);
+
+    // 每个答案一行
+    for (const entry of answerEntries) {
+      const line = document.createElement('div');
+      line.style.cssText = `
+        display: flex; align-items: baseline; gap: 6px;
+        padding: 3px 10px;
+        background: rgba(255, 163, 64, 0.12);
+        border: 1px solid rgba(255, 163, 64, 0.3);
+        border-radius: 3px; margin-top: 4px;
+        color: #873800; font-size: 13px;
+      `;
+
+      const letterSpan = document.createElement('span');
+      letterSpan.style.cssText = 'font-weight:700;color:#389e0d;min-width:18px;';
+      letterSpan.textContent = entry.letter || '?';
+
+      line.appendChild(letterSpan);
+      if (entry.text) {
+        const textSpan = document.createElement('span');
+        textSpan.style.cssText = 'font-weight:500;word-break:break-all;';
+        textSpan.textContent = entry.text;
+        line.appendChild(textSpan);
+      }
+
+      block.appendChild(line);
+    }
+
+    question.div.appendChild(block);
   }
 
-  function applyHighlight(element, colorScheme) {
-    element.style.cssText = `
-      background: ${colorScheme.bg};
-      border: 1px solid ${colorScheme.border};
-      border-radius: 4px;
-      padding: 2px 6px;
-      margin: 2px 0;
-      transition: all 0.3s ease;
-    `;
+  /**
+   * 主入口：精准高亮 + 结果区块展示
+   */
+  function highlightAndShowResult(question, bankResult) {
+    const { similarity, item } = bankResult;
+    if (similarity < MATCH_THRESHOLD || !item?.answer) return;
+
+    const answers = item.answer.split('|').map(a => a.trim());
+
+    // 精准高亮选项
+    for (const opt of question.options) {
+      const matched = answers.some(ans => {
+        const cleaned = cleanAnswerText(ans);
+        if (/^[A-Z]$/.test(cleaned)) return cleaned === opt.letter;
+        return matchAnswerExact(cleaned, opt.text);
+      });
+      if (matched) {
+        applyPreciseHighlight(opt.element);
+      }
+    }
+
+    // 展示匹配结果区块
+    showMatchResultBlock(question, bankResult);
   }
 
-  function showMatchBadge(questionDiv, similarity) {
-    if (questionDiv.querySelector('.qb-match-badge')) return;
+  /**
+   * 自动选中匹配的选项（仅考试页使用）
+   * 多选题：先取消所有已选，再勾选匹配项
+   */
+  function autoSelectAnswer(question, bankResult) {
+    const { similarity, item } = bankResult;
+    if (similarity < MATCH_THRESHOLD || !item?.answer) return;
 
-    const pct = Math.round(similarity * 100);
-    const bgColor = similarity >= HIGH_CONFIDENCE ? '#52c41a' : '#faad14';
+    const answers = item.answer.split('|').map(a => a.trim());
 
-    // 确保题目容器可做绝对定位参考
-    questionDiv.style.position = 'relative';
+    // 判断每个选项是否匹配
+    const matchedSet = new Set();
+    for (const opt of question.options) {
+      const matched = answers.some(ans => {
+        const cleaned = cleanAnswerText(ans);
+        if (/^[A-Z]$/.test(cleaned)) return cleaned === opt.letter;
+        return matchAnswerExact(cleaned, opt.text);
+      });
+      if (matched) matchedSet.add(opt.letter);
+    }
 
-    const badge = document.createElement('div');
-    badge.className = 'qb-match-badge';
-    badge.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: 0;
-      padding: 1px 8px;
-      border-radius: 0 0 4px 0;
-      font-size: 11px;
-      color: #fff;
-      background: ${bgColor};
-      line-height: 1.5;
-    `;
-    badge.textContent = `匹配${pct}%`;
-
-    questionDiv.appendChild(badge);
+    if (question.isMultiChoice) {
+      // 多选：先取消所有已选中的，再勾选匹配项
+      for (const opt of question.options) {
+        const input = opt.element.querySelector('input');
+        if (!input) continue;
+        if (input.checked && !matchedSet.has(opt.letter)) {
+          opt.element.click(); // 取消选中
+        }
+      }
+      for (const opt of question.options) {
+        const input = opt.element.querySelector('input');
+        if (!input) continue;
+        if (!input.checked && matchedSet.has(opt.letter)) {
+          opt.element.click(); // 勾选
+        }
+      }
+    } else {
+      // 单选：直接点击匹配项
+      for (const opt of question.options) {
+        if (matchedSet.has(opt.letter)) {
+          const input = opt.element.querySelector('input');
+          if (input && !input.checked) {
+            opt.element.click();
+          }
+          break; // 单选只点一个
+        }
+      }
+    }
   }
 
   // ===== 动态得分预测 =====
@@ -567,20 +751,37 @@
   async function processAllQuestions(questions, authToken) {
     const total = questions.length;
     let completed = 0;
+    let activeWorkers = 0;
+    authExpired = false;
+    adaptiveMaxWorkers = MAX_CONCURRENCY;
+    latencyHistory.length = 0;
 
     initPrediction();
     const progressBar = createProgressBar(total);
     const queue = [...questions];
 
     async function worker() {
-      while (queue.length > 0) {
+      activeWorkers++;
+      while (queue.length > 0 && !authExpired) {
+        // 并发缩减：多余的 worker 主动退出
+        if (activeWorkers > adaptiveMaxWorkers) {
+          activeWorkers--;
+          return;
+        }
+
         const question = queue.shift();
+        const startTime = Date.now();
         try {
           const result = await searchQuestionBank(question.pureText, authToken);
-          if (result && result.item) {
-            highlightOptions(question, result);
+          adjustConcurrency(Date.now() - startTime);
 
-            // 判定 bank 答案是否正确
+          if (result?.authFailed) {
+            handleAuthExpired(progressBar);
+            return;
+          }
+          if (result && result.item) {
+            highlightAndShowResult(question, result);
+
             const suggestedLetters = mapAnswerToLetters(question, result.item.answer);
             const correct = isAnswerCorrect(suggestedLetters, question.correctLetters, question.isMultiChoice);
 
@@ -595,13 +796,13 @@
         }
         completed++;
         updateProgress(progressBar, completed, total);
-        // 每完成一题，动态更新预测分数
         updateLiveScore(questions);
       }
+      activeWorkers--;
     }
 
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()));
-    setTimeout(() => progressBar.remove(), 2000);
+    await Promise.all(Array.from({ length: MAX_CONCURRENCY }, () => worker()));
+    if (!authExpired) setTimeout(() => progressBar.remove(), 2000);
 
     // 最终确认更新
     updateLiveScore(questions);
@@ -744,20 +945,37 @@
   async function processExamQuestions(questions, authToken) {
     const total = questions.length;
     let completed = 0;
+    let activeWorkers = 0;
+    authExpired = false;
+    adaptiveMaxWorkers = MAX_CONCURRENCY;
+    latencyHistory.length = 0;
 
     initPrediction();
     const progressBar = createProgressBar(total);
     const queue = [...questions];
 
     async function worker() {
-      while (queue.length > 0) {
+      activeWorkers++;
+      while (queue.length > 0 && !authExpired) {
+        if (activeWorkers > adaptiveMaxWorkers) {
+          activeWorkers--;
+          return;
+        }
+
         const question = queue.shift();
+        const startTime = Date.now();
         try {
           const result = await searchQuestionBank(question.pureText, authToken);
-          if (result && result.item) {
-            highlightOptions(question, result);
+          adjustConcurrency(Date.now() - startTime);
 
-            // 考试页无正确答案，信任题库匹配结果
+          if (result?.authFailed) {
+            handleAuthExpired(progressBar);
+            return;
+          }
+          if (result && result.item) {
+            highlightAndShowResult(question, result);
+            autoSelectAnswer(question, result);
+
             question.bankResult = {
               similarity: result.similarity,
               isCorrect: true,
@@ -771,10 +989,11 @@
         updateProgress(progressBar, completed, total);
         updateLiveScore(questions);
       }
+      activeWorkers--;
     }
 
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()));
-    setTimeout(() => progressBar.remove(), 2000);
+    await Promise.all(Array.from({ length: MAX_CONCURRENCY }, () => worker()));
+    if (!authExpired) setTimeout(() => progressBar.remove(), 2000);
     updateLiveScore(questions);
   }
 
