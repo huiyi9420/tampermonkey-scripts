@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         CoolCollege 智能辅助答题
 // @namespace    https://github.com/coolcollege-unlock
-// @version      2.1.0
+// @version      2.2.0
 // @description  自动匹配题库答案，用颜色标注选项与匹配率，实时动态预测得分区间，支持个人中心拦截、考试页辅助、详情页分析
 // @author       zhaolulu
 // @match        *://pro.coolcollege.cn/*
@@ -370,25 +370,37 @@
     return s.replace(/[\s，。？！、；：""''（）《》【】\(\)\[\]\{\},.?!;:'"<>/\\@#$%^&*+=\-_~`|·…—\-]/g, '');
   }
 
+  /**
+   * 清理题库答案文本：去除字母前缀（如 "A：消息队列" → "消息队列"）
+   */
+  function cleanAnswerText(ans) {
+    return ans.replace(/^[A-Z][：:]\s*/, '').trim();
+  }
+
   function matchAnswerToOption(ans, optText) {
     // 1. 精确匹配
     if (ans === optText) return true;
     // 2. 归一化后精确匹配
     if (normalizeText(ans) === normalizeText(optText)) return true;
-    // 3. 选项包含答案：要求答案占选项 70% 以上，防止短答案误匹配长选项
-    if (optText.includes(ans) && ans.length > optText.length * 0.7) return true;
+    // 3. 选项包含答案：要求答案占选项 60% 以上，防止短答案误匹配长选项
+    if (optText.includes(ans) && ans.length > optText.length * 0.6) return true;
     // 4. 归一化后包含匹配
     const normAns = normalizeText(ans);
     const normOpt = normalizeText(optText);
-    if (normOpt.includes(normAns) && normAns.length > normOpt.length * 0.7) return true;
+    if (normOpt.includes(normAns) && normAns.length > normOpt.length * 0.6) return true;
     return false;
   }
 
   function mapAnswerToLetters(question, bankAnswer) {
-    const answers = bankAnswer.split('|').map(a => a.trim());
+    const answers = bankAnswer.split('|').map(a => cleanAnswerText(a.trim()));
     const suggestedLetters = [];
 
     for (const ans of answers) {
+      // 单字母直接匹配
+      if (/^[A-Z]$/.test(ans)) {
+        suggestedLetters.push(ans);
+        continue;
+      }
       for (const opt of question.options) {
         if (matchAnswerToOption(ans, opt.text)) {
           suggestedLetters.push(opt.letter);
@@ -427,7 +439,12 @@
     const answers = item.answer.split('|').map(a => a.trim());
 
     for (const opt of question.options) {
-      const matched = answers.some(ans => matchAnswerToOption(ans, opt.text));
+      const matched = answers.some(ans => {
+        const cleaned = cleanAnswerText(ans);
+        // 单字母直接匹配选项
+        if (/^[A-Z]$/.test(cleaned)) return cleaned === opt.letter;
+        return matchAnswerToOption(cleaned, opt.text);
+      });
       if (matched) {
         applyHighlight(opt.element, colorScheme);
       }
@@ -727,6 +744,8 @@
   async function processExamQuestions(questions, authToken) {
     const total = questions.length;
     let completed = 0;
+
+    initPrediction();
     const progressBar = createProgressBar(total);
     const queue = [...questions];
 
@@ -737,17 +756,26 @@
           const result = await searchQuestionBank(question.pureText, authToken);
           if (result && result.item) {
             highlightOptions(question, result);
+
+            // 考试页无正确答案，信任题库匹配结果
+            question.bankResult = {
+              similarity: result.similarity,
+              isCorrect: true,
+              suggestedLetters: []
+            };
           }
         } catch (e) {
           console.warn(`[${SCRIPT_NAME}] 搜索失败: ${e.message}`);
         }
         completed++;
         updateProgress(progressBar, completed, total);
+        updateLiveScore(questions);
       }
     }
 
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, total) }, () => worker()));
     setTimeout(() => progressBar.remove(), 2000);
+    updateLiveScore(questions);
   }
 
   // ===== 答题详情页主流程 =====
